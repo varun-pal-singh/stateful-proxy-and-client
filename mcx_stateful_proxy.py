@@ -1,5 +1,7 @@
-# addon.py
+# mcx_stateful_proxy.py
 import os
+import re
+import json
 import threading
 import tempfile
 from mitmproxy import http
@@ -12,6 +14,7 @@ BASE_DIR = "margin_calls"
 REQ_DIR = os.path.join(BASE_DIR, "requests")
 RESP_DIR = os.path.join(BASE_DIR, "responses")
 COUNTER_FILE = os.path.join(BASE_DIR, "counter.txt")
+CREDENTIALS_FILE = os.path.join(BASE_DIR, "credentials.json")
 # ------------------------------------------
 
 os.makedirs(REQ_DIR, exist_ok=True)
@@ -19,6 +22,8 @@ os.makedirs(RESP_DIR, exist_ok=True)
 
 _lock = threading.Lock()
 
+
+# ----------------- UTILITIES -----------------
 def _read_counter():
     try:
         with open(COUNTER_FILE, "r", encoding="utf-8") as f:
@@ -28,6 +33,7 @@ def _read_counter():
     except Exception:
         return 0
 
+
 def _write_counter(value: int):
     fd, tmp = tempfile.mkstemp(dir=BASE_DIR)
     try:
@@ -36,8 +42,11 @@ def _write_counter(value: int):
         os.replace(tmp, COUNTER_FILE)
     finally:
         if os.path.exists(tmp):
-            try: os.remove(tmp)
-            except Exception: pass
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
 
 def _atomic_write(path: str, data: bytes):
     d = os.path.dirname(path)
@@ -48,104 +57,135 @@ def _atomic_write(path: str, data: bytes):
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
-            try: os.remove(tmp)
-            except Exception: pass
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
 
 def _wire_format_request(flow: http.HTTPFlow) -> bytes:
-    """
-    Reconstruct request in HTTP wire format (request-line + raw headers + CRLF + raw body)
-    Uses raw_headers and raw_content to preserve bytes as mitmproxy exposes them.
-    """
     req = flow.request
-    # request-line: METHOD SP PATH SP HTTP/VERSION CRLF
-    method = req.method.encode("ascii", errors="replace")
-    path = req.path.encode("utf-8", errors="replace")
-    version = ("HTTP/" + req.http_version).encode("ascii", errors="replace")
-    line = method + b" " + path + b" " + version + b"\r\n"
+    line = f"{req.method} {req.path} HTTP/{req.http_version}\r\n".encode()
 
-    # raw_headers is list of (name_bytes, value_bytes) in newer mitmproxy versions.
     headers_bytes = b""
-    try:
-        # If raw_headers exists and is bytes-pairs
-        raw_h = getattr(req, "raw_headers", None)
-        if raw_h:
-            # raw_h can be list of tuples (name, value)
-            for name, val in raw_h:
-                if isinstance(name, str):
-                    name = name.encode("utf-8", errors="replace")
-                if isinstance(val, str):
-                    val = val.encode("utf-8", errors="replace")
-                headers_bytes += name + b": " + val + b"\r\n"
-        else:
-            # Fallback: use req.headers (may normalize casing/order)
-            for k, v in req.headers.items(multi=True):
-                headers_bytes += k.encode("utf-8", errors="replace") + b": " + v.encode("utf-8", errors="replace") + b"\r\n"
-    except Exception:
-        # best-effort fallback
-        for k, v in req.headers.items(multi=True):
-            headers_bytes += k.encode("utf-8", errors="replace") + b": " + v.encode("utf-8", errors="replace") + b"\r\n"
+    for k, v in req.headers.items(multi=True):
+        headers_bytes += f"{k}: {v}\r\n".encode()
 
-    # blank line then body
     body = req.raw_content or b""
     return line + headers_bytes + b"\r\n" + body
 
+
 def _wire_format_response(flow: http.HTTPFlow) -> bytes:
-    """
-    Reconstruct response in HTTP wire format (status-line + raw headers + CRLF + raw body)
-    Uses raw_headers and raw_content to preserve bytes as mitmproxy exposes them.
-    """
-    resp = getattr(flow, "response", None)
+    resp = flow.response
     if not resp:
         return b"<no response>\r\n"
 
-    # status-line: HTTP/VERSION SP STATUS SP REASON CRLF
-    version = ("HTTP/" + resp.http_version).encode("ascii", errors="replace")
-    status = str(resp.status_code).encode("ascii", errors="replace")
-    reason = (resp.reason or "").encode("utf-8", errors="replace")
-    line = version + b" " + status + b" " + reason + b"\r\n"
+    line = f"HTTP/{resp.http_version} {resp.status_code} {resp.reason}\r\n".encode()
 
     headers_bytes = b""
-    try:
-        raw_h = getattr(resp, "raw_headers", None)
-        if raw_h:
-            for name, val in raw_h:
-                if isinstance(name, str):
-                    name = name.encode("utf-8", errors="replace")
-                if isinstance(val, str):
-                    val = val.encode("utf-8", errors="replace")
-                headers_bytes += name + b": " + val + b"\r\n"
-        else:
-            for k, v in resp.headers.items(multi=True):
-                headers_bytes += k.encode("utf-8", errors="replace") + b": " + v.encode("utf-8", errors="replace") + b"\r\n"
-    except Exception:
-        for k, v in resp.headers.items(multi=True):
-            headers_bytes += k.encode("utf-8", errors="replace") + b": " + v.encode("utf-8", errors="replace") + b"\r\n"
+    for k, v in resp.headers.items(multi=True):
+        headers_bytes += f"{k}: {v}\r\n".encode()
 
-    body = getattr(resp, "raw_content", None) or b""
+    body = resp.raw_content or b""
     return line + headers_bytes + b"\r\n" + body
 
+
+# def _save_credentials(creds: dict):
+#     """Write latest tokens to credentials.json atomically"""
+#     fd, tmp = tempfile.mkstemp(dir=BASE_DIR)
+#     try:
+#         with os.fdopen(fd, "w", encoding="utf-8") as f:
+#             json.dump(creds, f, indent=2)
+#         os.replace(tmp, CREDENTIALS_FILE)
+#     finally:
+#         if os.path.exists(tmp):
+#             try:
+#                 os.remove(tmp)
+#             except Exception:
+#                 pass
+from datetime import datetime
+
+def _save_credentials(creds: dict):
+    """Write latest tokens to credentials.json atomically"""
+    # always refresh last_updated on save
+    creds["last_updated"] = datetime.now().isoformat() + "Z"
+
+    fd, tmp = tempfile.mkstemp(dir=BASE_DIR)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(creds, f, indent=2)
+        os.replace(tmp, CREDENTIALS_FILE)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+
+
+
+# ----------------- MAIN ADDON -----------------
 class StatefulCredentialsProxy:
     def __init__(self):
-        # map flow.id -> index
         self.flow_to_index = {}
         self.counter = _read_counter()
         self.lock = _lock
+        # dict to store latest values
+        self.credentials = {}
 
     def _is_target(self, flow: http.HTTPFlow) -> bool:
         try:
             if flow.request.host != TARGET_HOST:
                 return False
-            # allow query strings; use startswith so exact-match issues with query params are avoided
             return flow.request.pretty_url.startswith(MONITORED_URL)
         except Exception:
             return False
 
+    # ---- helpers for extracting tokens ----
+    def _update_from_request(self, flow: http.HTTPFlow):
+        # cookies
+        cookie_header = flow.request.headers.get("Cookie", "")
+        for name in ["AlteonP", "JSESSIONID", "TS01d67e35", "TS254a1510027"]:
+            m = re.search(rf"{name}=([^;]+)", cookie_header)
+            if m:
+                self.credentials[name] = m.group(1)
+
+        # IXHRts in body
+        if flow.request.urlencoded_form:
+            if "IXHRts" in flow.request.urlencoded_form:
+                self.credentials["IXHRts"] = flow.request.urlencoded_form["IXHRts"]
+        else:
+            m = re.search(r"IXHRts=(\d+)", flow.request.get_text(strict=False))
+            if m:
+                self.credentials["IXHRts"] = m.group(1)
+
+        _save_credentials(self.credentials)
+
+    def _update_from_response(self, flow: http.HTTPFlow):
+        if not flow.response:
+            return
+        # Set-Cookie headers
+        set_cookies = flow.response.headers.get_all("Set-Cookie")
+        for sc in set_cookies:
+            for name in ["TS01d67e35", "TS254a1510027"]:
+                m = re.search(rf"{name}=([^;]+)", sc)
+                if m:
+                    self.credentials[name] = m.group(1)
+
+        # IXHRts in body
+        body = flow.response.get_text(strict=False)
+        m = re.search(r"IXHRts[#*#=](\d+)", body)
+        if m:
+            self.credentials["IXHRts"] = m.group(1)
+
+        _save_credentials(self.credentials)
+
+    # ---- mitmproxy hooks ----
     def request(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
 
         with self.lock:
-            # increment counter so indices start at 1
             self.counter += 1
             index = self.counter
             _write_counter(self.counter)
@@ -155,7 +195,7 @@ class StatefulCredentialsProxy:
         try:
             data = _wire_format_request(flow)
             _atomic_write(req_path, data)
-            print(f"[addon] wrote request -> {req_path} (flow id: {flow.id})")
+            self._update_from_request(flow)
         except Exception as e:
             print(f"[addon] failed to write request {req_path}: {e}")
 
@@ -167,22 +207,21 @@ class StatefulCredentialsProxy:
             index = self.flow_to_index.pop(flow.id, None)
 
         if index is None:
-            # request not seen by this addon (maybe reload). Assign next index to keep sequence.
             with self.lock:
                 self.counter += 1
                 index = self.counter
                 _write_counter(self.counter)
-            print(f"[addon] warning: response without mapping; assigned index {index} (flow id: {flow.id})")
 
         resp_path = os.path.join(RESP_DIR, f"response{index}.txt")
         try:
             data = _wire_format_response(flow)
             _atomic_write(resp_path, data)
-            print(f"[addon] wrote response -> {resp_path} (flow id: {flow.id})")
+            self._update_from_response(flow)
         except Exception as e:
             print(f"[addon] failed to write response {resp_path}: {e}")
 
     def error(self, flow: http.HTTPFlow):
         print(f"[addon] flow error id={getattr(flow, 'id', None)} err={getattr(flow, 'error', None)}")
 
-addons = [ StatefulCredentialsProxy() ]
+
+addons = [StatefulCredentialsProxy()]
