@@ -1,0 +1,19 @@
+POST /Bancs/RSK/RSK335.do HTTP/HTTP/1.1
+Host: eclear.mcxccl.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate, br, zstd
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 238
+Origin: https://eclear.mcxccl.com
+Connection: keep-alive
+Referer: https://eclear.mcxccl.com/Bancs/RSK/RSK335.do?app=bancsapp?prefix=/RSK&page=/RSK335.do&confViewSize=22&reqType=0&mode=DEF_MODE&cParent=&parentName=blank&browserType=IE55&GuiWinName=RSK335&compname=RSK&locale=&winlocale=&over_ride_button=Cancel&AvlHt=726&AvlWd=983&tblWd=967&GuiBrowserInst=0&theme=black&confViewSize=22&pageId=RSK335&wintitle=Margin%20Utilization%20View&availHeight=820&availWidth=1067&tabid=2&tabId=panel2
+Cookie: AlteonP=ArTcZUNEqMBxLkRXWshPOQ$$; JSESSIONID=00011H6tEw0UoEN8-IrHE8rXoz8:3TAPVTE6UH; TS01d67e35=01de3801a5391b5a7580387531c89c2e8ea5ecd0ec31b702ce0fdc7db70598b645a9af6cce29a8bcf405568a673647eb9cda7b015e47a1ad443f78f2103143b2392ff401dec6a57aedbd4a91625c48c74b884c5637; TS254a1510027=08f91e7fa6ab2000e1431dda97b6ece6ba08ee60b45dc2c75a421709b9aa1459ff168043d583e8670897d1bf751130008b9f27f32a5c405257ccb4b37d08fa2053825d4c5ef756c345dec11ce5a4d37462c7efe4bcdc718d592ec8750ef94350
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+Priority: u=0
+
+xmlReq=YES&reqType=19&GuiWinName=RSK335&GuiBrowserInst=0&inParam1=56835&inParam2=DFLT&tabId=panel2&functionName=funcname&ifCallPaint=false&ctrlId=MCB_SearchWC_wca_associatedtm&filterCombo=NO&filterS=sample&rndaak=KlU0nhqaF89otk4OBmz5HdWfh
