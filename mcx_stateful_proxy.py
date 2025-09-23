@@ -127,8 +127,8 @@ def _save_credentials(creds: dict):
 # ----------------- MAIN ADDON -----------------
 class StatefulCredentialsProxy:
     def __init__(self):
-        self.flow_to_index = {}
-        self.counter = _read_counter()
+        # self.flow_to_index = {}
+        # self.counter = _read_counter()
         self.lock = _lock
         # dict to store latest values
         self.credentials = {}
@@ -215,43 +215,45 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
 
-        with self.lock:
-            self.counter += 1
-            index = self.counter
-            _write_counter(self.counter)
-            self.flow_to_index[flow.id] = index
+        # with self.lock:
+            # self.counter += 1
+            # index = self.counter
+            # _write_counter(self.counter)
+            # self.flow_to_index[flow.id] = index
 
-        req_path = os.path.join(REQ_DIR, f"request{index}.txt")
+        # req_path = os.path.join(REQ_DIR, f"request{index}.txt")
         try:
             data = _wire_format_request(flow)
-            _atomic_write(req_path, data)
+            # _atomic_write(req_path, data)
             self._update_from_request(flow)
         except Exception as e:
-            print(f"[addon] failed to write request {req_path}: {e}")
+            # print(f"[addon] failed to write request {req_path}: {e}")
+            pass
 
     def response(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
 
-        with self.lock:
-            index = self.flow_to_index.pop(flow.id, None)
+        # with self.lock:
+            # index = self.flow_to_index.pop(flow.id, None)
 
-        if index is None:
-            with self.lock:
-                self.counter += 1
-                index = self.counter
-                _write_counter(self.counter)
+        # if index is None:
+        #     with self.lock:
+        #         self.counter += 1
+        #         index = self.counter
+        #         _write_counter(self.counter)
 
-        resp_path = os.path.join(RESP_DIR, f"response{index}.txt")
+        # resp_path = os.path.join(RESP_DIR, f"response{index}.txt")
         try:
             data = _wire_format_response(flow)
-            _atomic_write(resp_path, data)
+            # _atomic_write(resp_path, data)
             self._update_from_response(flow)
         except Exception as e:
-            print(f"[addon] failed to write response {resp_path}: {e}")
+            # print(f"[addon] failed to write response {resp_path}: {e}")
+            pass
 
-    def error(self, flow: http.HTTPFlow):
-        print(f"[addon] flow error id={getattr(flow, 'id', None)} err={getattr(flow, 'error', None)}")
+    # def error(self, flow: http.HTTPFlow):
+        # print(f"[addon] flow error id={getattr(flow, 'id', None)} err={getattr(flow, 'error', None)}")
 
 
 addons = [StatefulCredentialsProxy()]
