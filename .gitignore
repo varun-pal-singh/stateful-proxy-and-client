@@ -1,9 +1,13 @@
-__pycache__/
+__pycache__/ 
 
 .venv/
 
-credentials.json
+calls/
 
-margin_calls/
+config/config.ini
 
+config/credentials.json
 
+config/temp.json
+
+temp.py
