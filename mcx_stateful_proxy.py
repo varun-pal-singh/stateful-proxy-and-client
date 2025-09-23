@@ -40,71 +40,6 @@ _lock = threading.Lock()
 
 
 # ----------------- UTILITIES -----------------
-def _read_counter():
-    try:
-        with open(COUNTER_FILE, "r", encoding="utf-8") as f:
-            return int(f.read().strip() or "0")
-    except FileNotFoundError:
-        return 0
-    except Exception:
-        return 0
-
-
-def _write_counter(value: int):
-    fd, tmp = tempfile.mkstemp(dir=BASE_DIR)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(str(value))
-        os.replace(tmp, COUNTER_FILE)
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-
-
-def _atomic_write(path: str, data: bytes):
-    d = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(dir=d)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-
-
-def _wire_format_request(flow: http.HTTPFlow) -> bytes:
-    req = flow.request
-    line = f"{req.method} {req.path} HTTP/{req.http_version}\r\n".encode()
-
-    headers_bytes = b""
-    for k, v in req.headers.items(multi=True):
-        headers_bytes += f"{k}: {v}\r\n".encode()
-
-    body = req.raw_content or b""
-    return line + headers_bytes + b"\r\n" + body
-
-
-def _wire_format_response(flow: http.HTTPFlow) -> bytes:
-    resp = flow.response
-    if not resp:
-        return b"<no response>\r\n"
-
-    line = f"HTTP/{resp.http_version} {resp.status_code} {resp.reason}\r\n".encode()
-
-    headers_bytes = b""
-    for k, v in resp.headers.items(multi=True):
-        headers_bytes += f"{k}: {v}\r\n".encode()
-
-    body = resp.raw_content or b""
-    return line + headers_bytes + b"\r\n" + body
-
 def _save_credentials(creds: dict):
     """Write latest tokens to credentials.json atomically"""
     # always refresh last_updated on save
@@ -127,10 +62,7 @@ def _save_credentials(creds: dict):
 # ----------------- MAIN ADDON -----------------
 class StatefulCredentialsProxy:
     def __init__(self):
-        # self.flow_to_index = {}
-        # self.counter = _read_counter()
         self.lock = _lock
-        # dict to store latest values
         self.credentials = {}
 
     def _is_target(self, flow: http.HTTPFlow) -> bool:
@@ -143,22 +75,12 @@ class StatefulCredentialsProxy:
 
     # ---- helpers for extracting tokens ----
     def _update_from_request(self, flow: http.HTTPFlow):
-        # cookies
         updated = False
         cookie_header = flow.request.headers.get("Cookie", "")
         for name in ["AlteonP", "JSESSIONID", "TS01d67e35", "TS254a1510027"]:
             m = re.search(rf"{name}=([^;]+)", cookie_header)
             if m:
                 self.credentials[name] = m.group(1)
-
-        # IXHRts in body
-        # if flow.request.urlencoded_form:
-        #     if "IXHRts" in flow.request.urlencoded_form:
-        #         self.credentials["IXHRts"] = flow.request.urlencoded_form["IXHRts"]
-        # else:
-        #     m = re.search(r"IXHRts=(\d+)", flow.request.get_text(strict=False))
-        #     if m:
-        #         self.credentials["IXHRts"] = m.group(1)
 
         if flow.request.urlencoded_form:
             if "IXHRts" in flow.request.urlencoded_form and self.credentials.get("IXHRts") != flow.request.urlencoded_form["IXHRts"]:
@@ -200,7 +122,6 @@ class StatefulCredentialsProxy:
             updated = True
 
         # rndaak in body (newly added)
-        # This regex is more general and will capture any characters until the next HTML tag
         m_rndaak = re.search(r"rndaak[#*#=]([^<]+)", body)
         if m_rndaak and self.credentials.get("rndaak") != m_rndaak.group(1):
             self.credentials["rndaak"] = m_rndaak.group(1).strip()
@@ -215,45 +136,20 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
 
-        # with self.lock:
-            # self.counter += 1
-            # index = self.counter
-            # _write_counter(self.counter)
-            # self.flow_to_index[flow.id] = index
 
-        # req_path = os.path.join(REQ_DIR, f"request{index}.txt")
         try:
-            data = _wire_format_request(flow)
-            # _atomic_write(req_path, data)
             self._update_from_request(flow)
         except Exception as e:
-            # print(f"[addon] failed to write request {req_path}: {e}")
-            pass
+            print(f"[addon] failed to write request: {e}")
 
     def response(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
 
-        # with self.lock:
-            # index = self.flow_to_index.pop(flow.id, None)
-
-        # if index is None:
-        #     with self.lock:
-        #         self.counter += 1
-        #         index = self.counter
-        #         _write_counter(self.counter)
-
-        # resp_path = os.path.join(RESP_DIR, f"response{index}.txt")
         try:
-            data = _wire_format_response(flow)
-            # _atomic_write(resp_path, data)
             self._update_from_response(flow)
         except Exception as e:
-            # print(f"[addon] failed to write response {resp_path}: {e}")
-            pass
-
-    # def error(self, flow: http.HTTPFlow):
-        # print(f"[addon] flow error id={getattr(flow, 'id', None)} err={getattr(flow, 'error', None)}")
+            print(f"[addon] failed to write response: {e}")
 
 
 addons = [StatefulCredentialsProxy()]
