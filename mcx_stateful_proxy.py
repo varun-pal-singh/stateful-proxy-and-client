@@ -9,7 +9,7 @@ from datetime import datetime
 
 # ----------------- CONFIG -----------------
 TARGET_HOST = "eclear.mcxccl.com"
-# MONITORED_URL = "https://eclear.mcxccl.com/Bancs/RSK/RSK335.do"
+MARGIN_URL = "https://eclear.mcxccl.com/Bancs/RSK/RSK335.do"
 MONITORED_URL = "https://eclear.mcxccl.com/Bancs"
 
 config = configparser.ConfigParser()
@@ -30,7 +30,17 @@ COUNTER_FILE = os.path.join(BASE_DIR, "counter.txt")
 
 CREDENTIALS_FILE = os.path.join("config", "credentials.json")
 
-print(CREDENTIALS_FILE)
+# MARGIN_REQ_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "requests", "curr_req.txt")
+# MARGIN_RESP_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "responses", "curr_res.txt")
+# PREV_MARGIN_REQ_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "requests", "prev_req.txt")
+# PREV_MARGIN_RESP_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "responses", "prev_res.txt")
+
+MARGIN_REQ_FILE = os.path.join(REQ_DIR, "curr_req.txt")
+MARGIN_RESP_FILE = os.path.join(RESP_DIR, "curr_res.txt")
+PREV_MARGIN_REQ_FILE = os.path.join(REQ_DIR, "prev_req.txt")
+PREV_MARGIN_RESP_FILE = os.path.join(RESP_DIR, "prev_res.txt")
+
+# print(CREDENTIALS_FILE)
 # ------------------------------------------
 
 os.makedirs(REQ_DIR, exist_ok=True)
@@ -72,6 +82,33 @@ class StatefulCredentialsProxy:
             return flow.request.pretty_url.startswith(MONITORED_URL)
         except Exception:
             return False
+        
+    def _record_flow(self, flow: http.HTTPFlow):
+        if flow.request.pretty_url != MARGIN_URL:
+            return
+
+        with self.lock:
+            try:
+                # Step 1: Check if current files exist.
+                # If so, rename them to 'prev' files.
+                if os.path.exists(MARGIN_REQ_FILE):
+                    os.replace(MARGIN_REQ_FILE, PREV_MARGIN_REQ_FILE)
+                if os.path.exists(MARGIN_RESP_FILE):
+                    os.replace(MARGIN_RESP_FILE, PREV_MARGIN_RESP_FILE)
+
+                # Step 2: Save the new request content as the current file.
+                with open(MARGIN_REQ_FILE, "wb") as f:
+                    f.write(flow.request.get_content())
+                    print(f"Recorded current request to {MARGIN_REQ_FILE}")
+
+                # Step 3: Save the new response content as the current file.
+                if flow.response:
+                    with open(MARGIN_RESP_FILE, "wb") as f:
+                        f.write(flow.response.get_content())
+                        print(f"Recorded current response to {MARGIN_RESP_FILE}")
+
+            except Exception as e:
+                print(f"Error recording files for MARGIN_URL: {e}")
 
     # ---- helpers for extracting tokens ----
     def _update_from_request(self, flow: http.HTTPFlow):
@@ -135,8 +172,8 @@ class StatefulCredentialsProxy:
     def request(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
-
-
+        # recording only margin url req res
+        self._record_flow(flow) 
         try:
             self._update_from_request(flow)
         except Exception as e:
@@ -145,7 +182,8 @@ class StatefulCredentialsProxy:
     def response(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
-
+        # recording only margin url req res
+        self._record_flow(flow) 
         try:
             self._update_from_response(flow)
         except Exception as e:

@@ -12,4 +12,4 @@ config/temp.json
 
 client/payload.txt
 
-temp.py
+config/margin-info.json
