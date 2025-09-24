@@ -12,4 +12,4 @@ config/temp.json
 
 client/payload.txt
 
-config/margin-info.json
+parser/margin-info.json
