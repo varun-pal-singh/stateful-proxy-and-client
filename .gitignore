@@ -10,4 +10,6 @@ config/credentials.json
 
 config/temp.json
 
+client/payload.txt
+
 temp.py
