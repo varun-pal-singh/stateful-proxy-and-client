@@ -7,10 +7,10 @@ config = configparser.ConfigParser()
 config.read('../config/config.ini')
 
 SERVER_URL = config['CREDENTIALS']['SERVER_URL']
-FILE_PATH = "margin.json"
+FILE_PATH = config['PATH']['MARGIN_UTILIZATION_VIEW_FILE_PATH']
 
-print("SERVER_URL", SERVER_URL)
-print("FILE_PATH", FILE_PATH)
+# print("SERVER_URL", SERVER_URL)
+# print("FILE_PATH", FILE_PATH)
 
 def send_data():
     """Reads data from the JSON file and sends it to the server."""
@@ -26,11 +26,11 @@ def send_data():
             print(f"Failed to send data. Status code: {response.status_code}, Response: {response.text}")
             
     except FileNotFoundError:
-        print(f"Error: The file '{FILE_PATH}' was not found.")
+        print(f"Error: The file '{FILE_PATH}' was not found.\n")
     except json.JSONDecodeError:
-        print(f"Error: The file '{FILE_PATH}' is not a valid JSON file.")
+        print(f"Error: The file '{FILE_PATH}' is not a valid JSON file.\n")
     except requests.exceptions.RequestException as e:
-        print(f"Error connecting to the server: {e}")
+        print(f"Error connecting to the server: {e}\n")
 
 if __name__ == '__main__':
     print("Starting data transmission...")

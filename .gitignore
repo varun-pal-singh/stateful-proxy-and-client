@@ -8,8 +8,10 @@ config/config.ini
 
 config/credentials.json
 
-config/temp.json
+config/temp-credentials.json
 
 client/payload.txt
 
-parser/margin-info.json
+parser/margin-utilization-view.json
+
+parser/temp-margin-utilization-view.json

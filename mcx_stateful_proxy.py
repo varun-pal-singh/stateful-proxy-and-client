@@ -6,45 +6,30 @@ import tempfile
 import configparser
 from mitmproxy import http
 from datetime import datetime
-
-# ----------------- CONFIG -----------------
-TARGET_HOST = "eclear.mcxccl.com"
-MARGIN_URL = "https://eclear.mcxccl.com/Bancs/RSK/RSK335.do"
-MONITORED_URL = "https://eclear.mcxccl.com/Bancs"
+import configparser
 
 config = configparser.ConfigParser()
-config.read('config/config.ini')
+config.read('./config/config.ini')
 
+# ----------------- CONFIG -----------------
+TARGET_HOST = config['CREDENTIALS']['TARGET_HOST']
+MONITORED_URL = config['CREDENTIALS']['MONITORED_URL']
+MARGIN_URL  = config['CREDENTIALS']['MARGIN_URL']
 
-# TARGET_HOST = str(config["CREDENTIALS"]["TARGET_HOST"])
-# MONITORED_URL = str(config["CREDENTIALS"]["MONITORED_URL"])
-# CREDENTIALS_FILE_PATH = config["PATH"]["CREDENTIALS_FILE_PATH"]
+BASE_DIR = config['PATH']['BASE_DIR']
+CREDENTIALS_FILE  = config['PATH']['CREDENTIALS_FILE_PATH']
 
-BASE_DIR = "calls"
-BROWSER_DIR = "browser-calls"
-CLIENT_DIR = "client-calls"
+BROWSER_REQ_DIR = os.path.normpath(config["PATH"]["BROWSER_REQ_DIR"])
+BROWSER_RES_DIR = os.path.normpath(config["PATH"]["BROWSER_RES_DIR"])
 
-REQ_DIR = os.path.join(BASE_DIR, BROWSER_DIR, "requests")
-RESP_DIR = os.path.join(BASE_DIR, BROWSER_DIR, "responses")
-COUNTER_FILE = os.path.join(BASE_DIR, "counter.txt")
+MARGIN_REQ_FILE = os.path.join(BROWSER_REQ_DIR, "curr_req.txt")
+MARGIN_RESP_FILE = os.path.join(BROWSER_RES_DIR, "curr_res.txt")
 
-CREDENTIALS_FILE = os.path.join("config", "credentials.json")
+PREV_MARGIN_REQ_FILE = os.path.join(BROWSER_REQ_DIR, "prev_req.txt")
+PREV_MARGIN_RESP_FILE = os.path.join(BROWSER_RES_DIR, "prev_res.txt")
 
-# MARGIN_REQ_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "requests", "curr_req.txt")
-# MARGIN_RESP_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "responses", "curr_res.txt")
-# PREV_MARGIN_REQ_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "requests", "prev_req.txt")
-# PREV_MARGIN_RESP_FILE = os.path.join(BASE_DIR, BROWSER_DIR, "responses", "prev_res.txt")
-
-MARGIN_REQ_FILE = os.path.join(REQ_DIR, "curr_req.txt")
-MARGIN_RESP_FILE = os.path.join(RESP_DIR, "curr_res.txt")
-PREV_MARGIN_REQ_FILE = os.path.join(REQ_DIR, "prev_req.txt")
-PREV_MARGIN_RESP_FILE = os.path.join(RESP_DIR, "prev_res.txt")
-
-# print(CREDENTIALS_FILE)
-# ------------------------------------------
-
-os.makedirs(REQ_DIR, exist_ok=True)
-os.makedirs(RESP_DIR, exist_ok=True)
+os.makedirs(BROWSER_REQ_DIR, exist_ok=True)
+os.makedirs(BROWSER_RES_DIR, exist_ok=True)
 
 _lock = threading.Lock()
 
@@ -83,7 +68,7 @@ class StatefulCredentialsProxy:
         except Exception:
             return False
         
-    def _record_flow(self, flow: http.HTTPFlow):
+    def _record_margin_flow(self, flow: http.HTTPFlow):
         if flow.request.pretty_url != MARGIN_URL:
             return
 
@@ -93,6 +78,7 @@ class StatefulCredentialsProxy:
                 # If so, rename them to 'prev' files.
                 if os.path.exists(MARGIN_REQ_FILE):
                     os.replace(MARGIN_REQ_FILE, PREV_MARGIN_REQ_FILE)
+
                 if os.path.exists(MARGIN_RESP_FILE):
                     os.replace(MARGIN_RESP_FILE, PREV_MARGIN_RESP_FILE)
 
@@ -144,6 +130,7 @@ class StatefulCredentialsProxy:
         if not flow.response:
             return
         # Set-Cookie headers
+        updated = False
         set_cookies = flow.response.headers.get_all("Set-Cookie")
         for sc in set_cookies:
             for name in ["AlteonP", "JSESSIONID", "TS01d67e35", "TS254a1510027"]:
@@ -173,7 +160,8 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
         # recording only margin url req res
-        self._record_flow(flow) 
+        self._record_margin_flow(flow) 
+
         try:
             self._update_from_request(flow)
         except Exception as e:
@@ -183,7 +171,8 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
         # recording only margin url req res
-        self._record_flow(flow) 
+        self._record_margin_flow(flow) 
+
         try:
             self._update_from_response(flow)
         except Exception as e:
