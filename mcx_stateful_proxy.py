@@ -22,11 +22,11 @@ CREDENTIALS_FILE  = config['PATH']['CREDENTIALS_FILE_PATH']
 BROWSER_REQ_DIR = os.path.normpath(config["PATH"]["BROWSER_REQ_DIR"])
 BROWSER_RES_DIR = os.path.normpath(config["PATH"]["BROWSER_RES_DIR"])
 
-MARGIN_REQ_FILE = os.path.join(BROWSER_REQ_DIR, "curr_req.txt")
-MARGIN_RESP_FILE = os.path.join(BROWSER_RES_DIR, "curr_res.txt")
+MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQ_DIR, "curr_request.txt")
+MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RES_DIR, "curr_response.txt")
 
-PREV_MARGIN_REQ_FILE = os.path.join(BROWSER_REQ_DIR, "prev_req.txt")
-PREV_MARGIN_RESP_FILE = os.path.join(BROWSER_RES_DIR, "prev_res.txt")
+PREV_MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQ_DIR, "prev_request.txt")
+PREV_MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RES_DIR, "prev_response.txt")
 
 os.makedirs(BROWSER_REQ_DIR, exist_ok=True)
 os.makedirs(BROWSER_RES_DIR, exist_ok=True)
@@ -68,31 +68,41 @@ class StatefulCredentialsProxy:
         except Exception:
             return False
         
-    def _record_margin_flow(self, flow: http.HTTPFlow):
+    def _record_request_flow(self, flow: http.HTTPFlow):
         if flow.request.pretty_url != MARGIN_URL:
             return
 
         with self.lock:
             try:
-                # Step 1: Check if current files exist.
+                # Check if current files exist.
                 # If so, rename them to 'prev' files.
-                if os.path.exists(MARGIN_REQ_FILE):
-                    os.replace(MARGIN_REQ_FILE, PREV_MARGIN_REQ_FILE)
+                if os.path.exists(MARGIN_REQUEST_FILE):
+                    os.replace(MARGIN_REQUEST_FILE, PREV_MARGIN_REQUEST_FILE)
 
-                if os.path.exists(MARGIN_RESP_FILE):
-                    os.replace(MARGIN_RESP_FILE, PREV_MARGIN_RESP_FILE)
+                if flow.request:
+                    with open(MARGIN_REQUEST_FILE, "wb") as f:
+                        f.write(flow.request.get_content())
+                        print(f"Recorded current request to {MARGIN_REQUEST_FILE}")
+            
+            except Exception as e:
+                print(f"Error recording files for MARGIN_URL: {e}")
 
-                # Step 2: Save the new request content as the current file.
-                with open(MARGIN_REQ_FILE, "wb") as f:
-                    f.write(flow.request.get_content())
-                    print(f"Recorded current request to {MARGIN_REQ_FILE}")
+    def _record_response_flow(self, flow: http.HTTPFlow):
+        if flow.request.pretty_url != MARGIN_URL:
+            return
 
-                # Step 3: Save the new response content as the current file.
+        with self.lock:
+            try:
+                # Check if current files exist.
+                # If so, rename them to 'prev' files.
+                if os.path.exists(MARGIN_RESPONSE_FILE):
+                    os.replace(MARGIN_RESPONSE_FILE, PREV_MARGIN_RESPONSE_FILE)
+
                 if flow.response:
-                    with open(MARGIN_RESP_FILE, "wb") as f:
+                    with open(MARGIN_RESPONSE_FILE, "wb") as f:
                         f.write(flow.response.get_content())
-                        print(f"Recorded current response to {MARGIN_RESP_FILE}")
-
+                        print(f"Recorded current response to {MARGIN_RESPONSE_FILE}")
+            
             except Exception as e:
                 print(f"Error recording files for MARGIN_URL: {e}")
 
@@ -160,7 +170,9 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
         # recording only margin url req res
-        self._record_margin_flow(flow) 
+
+        # self._record_margin_flow(flow) 
+        self._record_request_flow(flow)
 
         try:
             self._update_from_request(flow)
@@ -171,7 +183,9 @@ class StatefulCredentialsProxy:
         if not self._is_target(flow):
             return
         # recording only margin url req res
-        self._record_margin_flow(flow) 
+        
+        # self._record_margin_flow(flow) 
+        self._record_response_flow(flow)
 
         try:
             self._update_from_response(flow)
