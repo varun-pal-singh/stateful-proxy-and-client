@@ -1,17 +1,25 @@
 from bs4 import BeautifulSoup
 import json
 import time
+import os
 import configparser
 
-config = configparser.ConfigParser()
-config.read('../config/config.ini')
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+print("CURR_DIR", CURR_DIR)
+# CURR_DIR C:\Users\admin01\Desktop\get_margin_data\parser
 
-RESPONSE_FILE_PATH = config['PATH']['RESPONSE_FILE_PATH']
-output_path = "margin-utilization-view.json"
+path_with_dots = os.path.join(CURR_DIR, '..', 'calls', 'browser-calls', 'responses', 'curr_response.txt')
+
+RESPONSE_FILE_PATH = os.path.normpath(path_with_dots)
+
+print("RESOLVED_PATH", RESPONSE_FILE_PATH) 
+
+# ../calls/browser-calls/responses/curr_response.txt
+
+output_path = os.path.join(CURR_DIR, "margin-utilization-view.json")
 
 def parse_response():
     # Load the uploaded response.txt file
-
     with open(RESPONSE_FILE_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -37,7 +45,7 @@ def parse_response():
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(table_data, f, indent=4, ensure_ascii=False)
 
-        output_path
+        print("table parsed")
 
 if __name__ == "__main__":
     while True:

@@ -1,16 +1,26 @@
 import requests
 import json
 import time
+import os
 import configparser
 
+CLIENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# CLIENT_DIR C:\Users\admin01\Desktop\get_margin_data\client
+
+print("CLIENT_DIR", CLIENT_DIR)
+
+CONFIG_FILE_PATH = os.path.join(CLIENT_DIR, '..', 'config', 'config.ini')
+
 config = configparser.ConfigParser()
-config.read('../config/config.ini')
+read_files = config.read(CONFIG_FILE_PATH)
+
+if not read_files:
+    print(f"ERROR: Could not read configuration file at: {CONFIG_FILE_PATH}")
 
 SERVER_URL = config['CREDENTIALS']['SERVER_URL']
-FILE_PATH = config['PATH']['MARGIN_UTILIZATION_VIEW_FILE_PATH']
 
-# print("SERVER_URL", SERVER_URL)
-# print("FILE_PATH", FILE_PATH)
+path_with_dots = os.path.join(CLIENT_DIR, '..', 'parser', 'margin-utilization-view.json')
+FILE_PATH = os.path.normpath(path_with_dots)
 
 def send_data():
     """Reads data from the JSON file and sends it to the server."""

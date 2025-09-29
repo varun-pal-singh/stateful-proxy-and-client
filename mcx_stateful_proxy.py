@@ -8,28 +8,42 @@ from mitmproxy import http
 from datetime import datetime
 import configparser
 
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_DIR = os.path.join(CURR_DIR, '.', 'config')
+CONFIG_FILE_PATH = os.path.join(CONFIG_DIR, 'config.ini')
+
 config = configparser.ConfigParser()
-config.read('./config/config.ini')
+read_files = config.read(CONFIG_FILE_PATH)
+
+if not read_files:
+    print(f"ERROR: Could not read configuration file at: {CONFIG_FILE_PATH}")
 
 # ----------------- CONFIG -----------------
 TARGET_HOST = config['CREDENTIALS']['TARGET_HOST']
 MONITORED_URL = config['CREDENTIALS']['MONITORED_URL']
 MARGIN_URL  = config['CREDENTIALS']['MARGIN_URL']
 
-BASE_DIR = config['PATH']['BASE_DIR']
-CREDENTIALS_FILE  = config['PATH']['CREDENTIALS_FILE_PATH']
+CREDENTIALS_FILE  = os.path.join(CONFIG_DIR, 'credentials.json')
 
-BROWSER_REQ_DIR = os.path.normpath(config["PATH"]["BROWSER_REQ_DIR"])
-BROWSER_RES_DIR = os.path.normpath(config["PATH"]["BROWSER_RES_DIR"])
+# BROWSER_REQ_DIR = os.path.normpath(config["PATH"]["BROWSER_REQ_DIR"])
+# BROWSER_RES_DIR = os.path.normpath(config["PATH"]["BROWSER_RES_DIR"])
 
-MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQ_DIR, "curr_request.txt")
-MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RES_DIR, "curr_response.txt")
+# path_with_dots = os.path.join(PARSER_DIR, '..', 'calls', 'browser-calls', 'responses', 'curr_response.txt')
 
-PREV_MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQ_DIR, "prev_request.txt")
-PREV_MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RES_DIR, "prev_response.txt")
+# RESPONSE_FILE_PATH = os.path.normpath(path_with_dots)
 
-os.makedirs(BROWSER_REQ_DIR, exist_ok=True)
-os.makedirs(BROWSER_RES_DIR, exist_ok=True)
+BROWSER_REQUEST_DIR = os.path.join(CURR_DIR, './calls', 'browser-calls', 'requests')
+BROWSER_RESPONSE_DIR = os.path.join(CURR_DIR, './calls', 'browser-calls', 'responses')
+
+MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQUEST_DIR, "curr_request.txt")
+MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RESPONSE_DIR, "curr_response.txt")
+
+PREV_MARGIN_REQUEST_FILE = os.path.join(BROWSER_REQUEST_DIR, "prev_request.txt")
+PREV_MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RESPONSE_DIR, "prev_response.txt")
+
+os.makedirs(BROWSER_REQUEST_DIR, exist_ok=True)
+os.makedirs(BROWSER_RESPONSE_DIR, exist_ok=True)
 
 _lock = threading.Lock()
 
@@ -40,7 +54,7 @@ def _save_credentials(creds: dict):
     # always refresh last_updated on save
     creds["last_updated"] = datetime.now().isoformat() + "Z"
 
-    fd, tmp = tempfile.mkstemp(dir=BASE_DIR)
+    fd, tmp = tempfile.mkstemp(dir=CONFIG_DIR)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(creds, f, indent=2)
