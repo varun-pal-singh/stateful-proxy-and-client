@@ -35,17 +35,18 @@ def parse_response():
 
         # Extract first row values
         row = table.find("tbody").find("tr")
-        values = [td.get_text(strip=True) for td in row.find_all("td")]
+        if row:
+            values = [td.get_text(strip=True) for td in row.find_all("td")]
 
-        # Combine into dictionary
-        table_data = dict(zip(headers, values))
+            # Combine into dictionary
+            table_data = dict(zip(headers, values))
 
-        # Save to JSON file
-        
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(table_data, f, indent=4, ensure_ascii=False)
+            # Save to JSON file
+            
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(table_data, f, indent=4, ensure_ascii=False)
 
-        print("table parsed")
+            print("table parsed")
 
 if __name__ == "__main__":
     while True:
