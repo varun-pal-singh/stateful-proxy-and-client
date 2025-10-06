@@ -6,7 +6,10 @@ import tempfile
 import configparser
 from mitmproxy import http
 from datetime import datetime
+from urllib.parse import parse_qs
 import configparser
+import time
+import random
 
 CURR_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,13 +29,6 @@ MARGIN_URL  = config['CREDENTIALS']['MARGIN_URL']
 
 CREDENTIALS_FILE  = os.path.join(CONFIG_DIR, 'credentials.json')
 
-# BROWSER_REQ_DIR = os.path.normpath(config["PATH"]["BROWSER_REQ_DIR"])
-# BROWSER_RES_DIR = os.path.normpath(config["PATH"]["BROWSER_RES_DIR"])
-
-# path_with_dots = os.path.join(PARSER_DIR, '..', 'calls', 'browser-calls', 'responses', 'curr_response.txt')
-
-# RESPONSE_FILE_PATH = os.path.normpath(path_with_dots)
-
 BROWSER_REQUEST_DIR = os.path.join(CURR_DIR, './calls', 'browser-calls', 'requests')
 BROWSER_RESPONSE_DIR = os.path.join(CURR_DIR, './calls', 'browser-calls', 'responses')
 
@@ -45,7 +41,29 @@ PREV_MARGIN_RESPONSE_FILE = os.path.join(BROWSER_RESPONSE_DIR, "prev_response.tx
 os.makedirs(BROWSER_REQUEST_DIR, exist_ok=True)
 os.makedirs(BROWSER_RESPONSE_DIR, exist_ok=True)
 
+config = configparser.RawConfigParser()
+config.read(CONFIG_FILE_PATH)
+
+DEFAULT_MARGIN_PAYLOAD_TEMPLATE = config["DEFAULTS"]["DEFAULT_MARGIN_PAYLOAD_TEMPLATE"]
+AUTO_CAPTURE_FLAG = config["DEFAULTS"]["AUTO_CAPTURE_FLAG"]
+
 _lock = threading.Lock()
+
+EMPTY_CHECK_FIELDS = [
+    "MCB_SearchWC_wca_bpid",
+    "MCB_SearchWC_wca_associatedtm",
+    "MCB_SearchWC_wca_actype",
+    "MCB_SearchWC_wca_associatedcm",
+    "MCB_SearchWC_wca_category",
+]
+
+DFLT_CHECK_FIELDS = [
+    "propertyMap(MCB_SearchWC_wca_bpid_Cmb)",
+    "propertyMap(MCB_SearchWC_wca_associatedtm_Cmb)",
+    "propertyMap(MCB_SearchWC_wca_associatedcm_Cmb)",
+    "MCB_SearchWC_wca_CMName",
+    "MCB_SearchWC_wca_TMName",
+]
 
 
 # ----------------- UTILITIES -----------------
@@ -81,6 +99,44 @@ class StatefulCredentialsProxy:
             return flow.request.pretty_url.startswith(MONITORED_URL)
         except Exception:
             return False
+    
+    def _is_unfiltered(self, flow: http.HTTPFlow) -> bool:
+        if flow.request.pretty_url != MARGIN_URL:
+            return False 
+        
+        content = flow.request.content
+        if not content:
+            return False # No content to check
+
+        try:
+            form_dict_of_lists = parse_qs(content.decode('utf-8'))
+        except Exception as e:
+            print(f"[Proxy] Error parsing request body: {e}")
+            return False
+
+        # Extract the first value for each key for simplified checking
+        params = {k: v[0] for k, v in form_dict_of_lists.items()}
+
+        is_unfiltered = True
+        for field in EMPTY_CHECK_FIELDS:
+            value = params.get(field, "")
+            if value != "":
+                print(f"[Proxy] FILTERED: Skipping recording. Field '{field}' has value: '{value}'")
+                is_unfiltered = False
+                break
+
+        for field in DFLT_CHECK_FIELDS:
+            value = params.get(field, "")
+            if value != "DFLT":
+                # If any field has a value, the request is filtered.
+                print(f"[Proxy] FILTERED: Skipping recording. Field '{field}' has value: '{value}'")
+                is_unfiltered = False
+                break
+        
+        if "sQuery" in params and params["sQuery"] != "Client Code  Equals  DFLT AND TM / CP  Equals  DFLT AND CM  Equals  DFLT":
+            is_unfiltered = False
+            
+        return is_unfiltered
         
     def _record_request_flow(self, flow: http.HTTPFlow):
         if flow.request.pretty_url != MARGIN_URL:
@@ -179,16 +235,75 @@ class StatefulCredentialsProxy:
             print("[Proxy] Credentials updated from response.")
             _save_credentials(self.credentials)
 
+    # this function will hit if we get margin request call from our mcx_client.py
+    def _rewrite_margin_request(self, flow: http.HTTPFlow):
+        if flow.request.pretty_url != MARGIN_URL:
+            return
+
+        request_text = flow.request.get_text(strict=False)
+
+        if AUTO_CAPTURE_FLAG in request_text:
+            ixhrts_val = self.credentials.get("IXHRts", "")
+            rndaak_str = self.credentials.get("rndaak", "")
+            
+            if not ixhrts_val or not rndaak_str:
+                print("[Proxy] ERROR: Missing IXHRts or rndaak for auto-capture rewrite.")
+                fresh_ixhrts = int(time.time() * 1000)
+            else:
+                try:
+                    base_ixhrts = int(ixhrts_val)
+                    jitter_ms = random.randint(50, 200)
+                    fresh_ixhrts = base_ixhrts + jitter_ms
+                    
+                except ValueError:
+                    print("[Proxy] WARNING: IXHRts token was invalid. Generating fresh epoch time.")
+                    fresh_ixhrts = int(time.time() * 1000)
+
+            final_payload = DEFAULT_MARGIN_PAYLOAD_TEMPLATE.format(
+                IXHRts=fresh_ixhrts, 
+                rndaak=rndaak_str
+            )
+
+            final_payload = DEFAULT_MARGIN_PAYLOAD_TEMPLATE.format(
+                IXHRts=ixhrts_val,
+                rndaak=rndaak_str
+            )
+            
+            flow.request.set_text(final_payload)
+
+            print("Final payload", final_payload)
+
+            flow.request.headers["Content-Length"] = str(len(final_payload))
+
+            print(f"[Proxy] AUTO-CAPTURE: Rewrote payload for {MARGIN_URL}")
+
     # ---- mitmproxy hooks ----
     def request(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
-        # recording only margin url req res
+        
+        # Initialize metadata flag, to be consistent between req res cycle
+        flow.metadata["is_unfiltered_margin_request"] = False
 
-        # self._record_margin_flow(flow) 
-        self._record_request_flow(flow)
+        if flow.request.pretty_url == MARGIN_URL:
+            if self._is_unfiltered(flow):
+                flow.metadata["is_unfiltered_margin_request"] = True
+
+        is_unfiltered = flow.metadata.get("is_unfiltered_margin_request", False)
+
+        # is_unfiltered = True
+
+        if is_unfiltered:
+            # if its default margin req
+
+            # if this request is generated by our mcx_client.py
+            self._rewrite_margin_request(flow)
+
+            # record req in curr_request.txt fil
+            self._record_request_flow(flow)
 
         try:
+            # update tokens
             self._update_from_request(flow)
         except Exception as e:
             print(f"[addon] failed to write request: {e}")
@@ -196,12 +311,19 @@ class StatefulCredentialsProxy:
     def response(self, flow: http.HTTPFlow):
         if not self._is_target(flow):
             return
-        # recording only margin url req res
         
-        # self._record_margin_flow(flow) 
-        self._record_response_flow(flow)
+        is_unfiltered = flow.metadata.get("is_unfiltered_margin_request", False)
+
+        # is_unfiltered = True
+
+        if is_unfiltered:
+            # if its default margin req
+
+            # record res in curr_response.txt 
+            self._record_response_flow(flow)
 
         try:
+            # update tokens
             self._update_from_response(flow)
         except Exception as e:
             print(f"[addon] failed to write response: {e}")
