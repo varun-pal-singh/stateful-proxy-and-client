@@ -24,51 +24,67 @@ It consists of three services, i.e.,
 
 There are two main hooks for this add-on, i.e., request(flow), response(flow), 
 
-> def request(self, flow: http.HTTPFlow):
+```python
+def request(self, flow: http.HTTPFlow):
 
-> def response(self, flow: http.HTTPFlow):
+def response(self, flow: http.HTTPFlow):
+```
 
-Rest all are utility functions to help these two hooks, namely
-
-> def _save_credentials(creds: dict):
-
-> def _is_target(self, flow: http.HTTPFlow) -> bool:
-
-> def _is_unfiltered(self, flow: http.HTTPFlow) -> bool
-
-> def _record_request_flow(self, flow: http.HTTPFlow):
-
-> def _record_response_flow(self, flow: http.HTTPFlow):
-
-> def _update_from_request(self, flow: http.HTTPFlow):
-
-> def _update_from_response(self, flow: http.HTTPFlow):
-
-> def _rewrite_margin_request(self, flow: http.HTTPFlow):
+Rest all are utility functions to help these two hooks.
 
 Every request and response from firefox, will pass through these two hooks only, so here we are doing some work to ensure we get latest uncurrpted data.
 
-I will discuss the flow for request, and response flow will be similar to that only
+I will discuss the flow for request, and response flow will be similar to that only.
 
 1. First we filter the request, and checks if the request is coming from our target (***self.is_target(flow)***) url else no need to check and return simply
 
+```python
+def _is_target(self, flow: http.HTTPFlow) -> bool:
+```
+
 2. Then we check if the get default request by (***self.is_unfiltered(flow)***) else we don't have to record it, as it may be a filter margin request for some perticular user, we don't have to care about it
+
+```python
+def _is_unfiltered(self, flow: http.HTTPFlow) -> bool:
+```
 
 3. If request is coming from our ./client/mcx_margin.py (our custom client to get the margin data), then we fill the credentials to it from our ./config/credentials.json file (***self._rewrite_margin_request(flow)***).
 
-4. Then at last we are recording the request and response in request and response folder defined in config.ini file, respectively, first we check (***_record_request_flow(flow)*** and ***_record_response_flow(flow)***) if we already have these files in our request and response folder, if yes, then we will save them as *prev_request.txt* and *prev_response.txt* first, then only proceed to save them *curr_request.txt* and *curr_response.txt*.
+```python
+def _rewrite_margin_request(self, flow: http.HTTPFlow):
+```
 
-5. Lastly we update and record, the credentials (cookies, IXHRts, Rndaak) in ./config/credentials.json file (***_update_from_request*** and ***_update_from_response***) from every request that is coming from our target url and save it by using ***_save_credentials(dict)***.
+4. Then at last we are recording the request and response in request and response folder defined in config.ini file, respectively, first we check (***self._record_request_flow(flow)*** and ***self._record_response_flow(flow)***) if we already have these files in our request and response folder, if yes, then we will save them as *prev_request.txt* and *prev_response.txt* first, then only proceed to save them *curr_request.txt* and *curr_response.txt*.
+
+```python
+def _record_request_flow(self, flow: http.HTTPFlow):
+
+def _record_response_flow(self, flow: http.HTTPFlow):
+```
+
+5. Lastly we update and record, the credentials (cookies, IXHRts, Rndaak) in ./config/credentials.json file (***self._update_from_request(flow)*** and ***self._update_from_response(flow)***) from every request that is coming from our target url and save it by using ***_save_credentials(dict)***.
+
+```python
+def _update_from_request(self, flow: http.HTTPFlow):
+
+def _update_from_response(self, flow: http.HTTPFlow):
+
+def _save_credentials(creds: dict):
+```
 
 ### Margin Parser (./parser/margin_table_parser.py)
 
-> def parse_response():   
+```python
+def parse_response():  
+``` 
 
 it parse curr_response.txt file made in calls/browser/responses after filtering in _record_response_flow(), every 10 seconds to ensure data accuracy.
 
 ### Margin Sender (./client/margin_data_sender.py)
 
-> def send_data():    
+```python
+def send_data(): 
+```    
 
 it sends data to remote VM provided in config.ini file, every 10 seconds.
 
